@@ -7,6 +7,11 @@ const api=async(m,u,b,isForm)=>{
  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'خطأ');return j};
 const el=(t,txt,cls)=>{const e=document.createElement(t);if(txt!==undefined&&txt!==null)e.textContent=txt;if(cls)e.className=cls;return e};
 const btn=(txt,fn,cls)=>{const b=el('button',txt,cls);b.onclick=async()=>{try{await fn();load()}catch(e){alert(e.message)}};return b};
+const shrink=f=>new Promise((ok,no)=>{const i=new Image(),u=URL.createObjectURL(f);
+ i.onload=()=>{const s=Math.min(1,900/Math.max(i.width,i.height)),c=document.createElement('canvas');
+  c.width=Math.round(i.width*s);c.height=Math.round(i.height*s);c.getContext('2d').drawImage(i,0,0,c.width,c.height);
+  URL.revokeObjectURL(u);c.toBlob(b=>b?ok(b):no(new Error('فشل تجهيز الصورة')),'image/jpeg',0.75)};
+ i.onerror=()=>no(new Error('صورة غير صالحة'));i.src=u});
 
 async function login(){
  const a=await Pi.authenticate(['username','payments'],p=>{
@@ -35,5 +40,7 @@ async function load(){
   if(o.buyerUid===me.uid&&['paid','shipped'].includes(o.status))c.append(btn('فتح نزاع',()=>api('POST',`/api/orders/${o.id}/dispute`),'red'));
   O.append(c)});
 }
-$('#add').onsubmit=async e=>{e.preventDefault();try{await api('POST','/api/products',new FormData(e.target),true);e.target.reset();load()}catch(x){alert(x.message)}};
+$('#add').onsubmit=async e=>{e.preventDefault();try{
+ const fd=new FormData(e.target);fd.set('image',await shrink(fd.get('image')),'photo.jpg');
+ await api('POST','/api/products',fd,true);e.target.reset();load()}catch(x){alert(x.message)}};
 login().catch(()=>{load();alert('افتح التطبيق من Pi Browser')});
