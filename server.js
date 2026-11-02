@@ -38,7 +38,7 @@ async function auth(req,res,next){
  const c=cache.get(t);if(c&&c.exp>Date.now()){req.user=c.u;return next()}
  try{
   const r=await fetch(PI+'/me',{headers:{Authorization:'Bearer '+t}});
-  if(!r.ok)return res.status(401).json({error:'invalid token'});
+  if(!r.ok){console.error('pi me failed',r.status,await r.text());return res.status(401).json({error:'invalid token'})}
   const u=await r.json();req.user={uid:u.uid,name:u.username};
   cache.set(t,{u:req.user,exp:Date.now()+300000});next();
  }catch{res.status(502).json({error:'pi unreachable'})}
