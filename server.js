@@ -83,4 +83,47 @@ app.delete('/api/products/:id',auth,h(async(req,res)=>{
  if(s.docs.some(d=>['paid','shipped','disputed'].includes(d.data().status)))
   return res.status(409).json({error:'يوجد طلب قيد التنفيذ'});
  await o.ref.update({active:false});
- if(o.p.imageId)I
+  if(o.p.imageId)I.doc(o.p.imageId).delete().catch(()=>{});
+ res.json({ok:true});
+}));
+
+const ID=/^[\w-]{5,100}$/;
+app.post('/api/payments/approve',auth,h(async(req,res)=>{
+ const id=String(req.body.paymentId||'');if(!ID.test(id))return res.status(400).json({error:'bad id'});
+ const pay=await (await piKey('GET','/payments/'+id)).json();
+ const ps=await P.doc(String(pay.metadata?.productId||'x')).get(),p=ps.data();
+ if(!ps.exists||!p.active||p.sellerUid===req.user.uid||pay.user_uid!==req.user.uid||Number(pay.amount)!==p.price)
+  return res.status(400).json({error:'رفض الدفع'});
+ const ref=O.doc(id);
+ if(!(await ref.get()).exists)await ref.set({productId:ps.id,title:p.title,price:p.price,
+  buyerUid:req.user.uid,sellerUid:p.sellerUid,status:'pending',at:Date.now()});
+ const r=await piKey('POST',`/payments/${id}/approve`);
+ res.status(r.ok?200:502).json({ok:r.ok});
+}));
+app.post('/api/payments/complete',auth,h(async(req,res)=>{
+ const id=String(req.body.paymentId||''),txid=clean(req.body.txid,200);
+ if(!ID.test(id))return res.status(400).json({error:'bad id'});
+ const ref=O.doc(id),s=await ref.get();
+ if(!s.exists||s.data().buyerUid!==req.user.uid)return res.status(404).json({error:'طلب غير موجود'});
+ const r=await piKey('POST',`/payments/${id}/complete`,{txid});
+ if(!r.ok)return res.status(502).json({error:'فشل التأكيد'});
+ if(s.data().status==='pending')await ref.update({status:'paid',txid,paidAt:Date.now()});
+ res.json({ok:true});
+}));
+
+app.get('/api/orders',auth,h(async(req,res)=>{
+ const [a,b]=await Promise.all([O.where('buyerUid','==',req.user.uid).get(),O.where('sellerUid','==',req.user.uid).get()]);
+ const m=new Map();[...a.docs,...b.docs].forEach(d=>m.set(d.id,{id:d.id,...d.data()}));
+ res.json([...m.values()].filter(o=>o.status!=='pending'));
+}));
+const step=(from,to,who)=>h(async(req,res)=>{
+ const ref=O.doc(String(req.params.id)),s=await ref.get(),o=s.data();
+ if(!s.exists||o[who]!==req.user.uid||!from.includes(o.status))return res.status(403).json({error:'غير مسموح'});
+ await ref.update({status:to,[to+'At']:Date.now()});res.json({id:s.id,...o,status:to});
+});
+app.post('/api/orders/:id/ship',auth,step(['paid'],'shipped','sellerUid'));
+app.post('/api/orders/:id/confirm',auth,step(['shipped'],'released','buyerUid'));
+app.post('/api/orders/:id/dispute',auth,step(['paid','shipped'],'disputed','buyerUid'));
+
+app.use(express.static(path.join(__dirname,'public')));
+app.listen(process.env.PORT||3000,()=>console.log('running'));
